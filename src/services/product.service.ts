@@ -90,7 +90,9 @@ export const productService = {
   // Get list of available attributes (Size, Color, Material...)
   getAttributes: async () => {
     // Explicitly casting the return to the expected type to handle the interceptor's behavior
-    return (await axiosInstance.get("/attributes")) as unknown as AttributeListResponse;
+    return (await axiosInstance.get(
+      "/attributes"
+    )) as unknown as AttributeListResponse;
   },
 
   // Create product
@@ -130,6 +132,17 @@ export const productService = {
   updateProduct: async (id: number, formData: FormData) => {
     return await axiosInstance.post(`/products/${id}?_method=PUT`, formData, {
       headers: { "Content-Type": "multipart/form-data" },
+    });
+  },
+  // NEW: Import Excel
+  importProducts: async (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    return await axiosInstance.post("/products/import", formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
     });
   },
 };
