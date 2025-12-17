@@ -4,14 +4,17 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use App\Models\Category;
+use App\Models\ProductStore;
 use App\Models\Product;
 use App\Models\ProductImage;
 use App\Models\ProductAttribute;
-use App\Models\Attribute;
+// use App\Models\Attribute;
 use Illuminate\Support\Str; // Nhớ import Str
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
-
+use OpenSpout\Reader\XLSX\Reader as XlsxReader;
+use OpenSpout\Reader\CSV\Reader as CsvReader;
 class ProductController extends Controller
 {
     // Lấy danh sách sản phẩm (Có lọc & phân trang)
@@ -302,5 +305,112 @@ class ProductController extends Controller
             ], 500);
         }
     }
+    // --- NEW: IMPORT EXCEL ---
+    public function import(Request $request)
+    {
+        // 1. Validate File
+        $request->validate([
+            'file' => 'required|file|mimes:xlsx,xls,csv|max:10240', // Max 10MB
+        ]);
 
+        DB::beginTransaction();
+        try {
+            $file = $request->file('file');
+            $filePath = $file->getPathname();
+            $extension = strtolower($file->getClientOriginalExtension());
+
+            // 2. Select Reader based on extension (OpenSpout v4 style)
+            if ($extension === 'csv') {
+                $reader = new CsvReader();
+            } else {
+                $reader = new XlsxReader();
+            }
+
+            $reader->open($filePath);
+
+            $isHeader = true;
+
+            foreach ($reader->getSheetIterator() as $sheet) {
+                foreach ($sheet->getRowIterator() as $row) {
+                    // Skip the first row (Header)
+                    if ($isHeader) {
+                        $isHeader = false;
+                        continue;
+                    }
+
+                    // Get cells as an array
+                    $cells = $row->toArray();
+
+                    // Ensure we have enough columns (Avoid index errors)
+                    if (count($cells) < 3)
+                        continue;
+
+                    // --- MAPPING DATA ---
+                    // 0: Name, 1: Category, 2: Price, 3: Qty, 4: Cost, 5: Desc, 6: Content, 7: Thumbnail
+                    $name = $cells[0] ?? 'No Name';
+                    $catName = $cells[1] ?? 'Uncategorized';
+                    $price = is_numeric($cells[2] ?? 0) ? $cells[2] : 0;
+                    $qty = is_numeric($cells[3] ?? 0) ? $cells[3] : 0;
+                    $cost = is_numeric($cells[4] ?? 0) ? $cells[4] : ($price * 0.7);
+                    $desc = $cells[5] ?? '';
+                    $content = $cells[6] ?? '';
+                    $thumb = $cells[7] ?? null;
+
+                    // 3. Logic: Find or Create Category
+                    $category = Category::firstOrCreate(
+                        ['name' => $catName],
+                        ['slug' => Str::slug($catName), 'status' => 1]
+                    );
+
+                    // 4. Create Product
+                    $product = Product::create([
+                        'category_id' => $category->id,
+                        'name' => $name,
+                        'slug' => Str::slug($name) . '-' . time() . '-' . rand(100, 999),
+                        'price_buy' => $price,
+                        'content' => $content,
+                        'description' => $desc,
+                        'thumbnail' => $thumb,
+                        'status' => 1,
+                        'is_new' => 1,
+                        'created_by' => auth('api')->id() ?? 1,
+                    ]);
+
+                    // 5. Create Inventory
+                    ProductStore::create([
+                        'product_id' => $product->id,
+                        'price_root' => $cost,
+                        'qty' => $qty,
+                        'status' => 1
+                    ]);
+
+                    // 6. Add Image to Gallery (Optional)
+                    if ($thumb) {
+                        ProductImage::create([
+                            'product_id' => $product->id,
+                            'image' => $thumb,
+                            'alt' => $name,
+                        ]);
+                    }
+                }
+                // Only process the first sheet
+                break;
+            }
+
+            $reader->close();
+            DB::commit();
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Import successfully via OpenSpout!'
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status' => false,
+                'message' => 'Import Failed: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }

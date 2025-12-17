@@ -50,7 +50,7 @@ class Product extends Model
     {
         // Nếu chưa có ảnh, trả về ảnh placeholder
         if (!$this->thumbnail) {
-            return 'https://placehold.co/400x600?text=No+Image';
+            return 'https://placehold.co/400x600?text=No+Image';    
         }
 
         // Nếu ảnh là link online (unsplash...) thì giữ nguyên

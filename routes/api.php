@@ -63,15 +63,18 @@ Route::put('orders/{id}', [OrderController::class, 'update']); // Cập nhật t
 Route::delete('orders/{id}', [OrderController::class, 'destroy']); // Xóa đơn
 
 
-// --- QUẢN LÝ SẢN PHẨM (ADMIN) ---
-// Thêm dòng này để cho phép POST (Thêm mới)
-Route::post('products', [ProductController::class, 'store']); 
 
 // Route cũ (Xem danh sách)
 Route::get('products', [ProductController::class, 'index']);
 Route::get('products/{slug}', [ProductController::class, 'show']);
 Route::put('products/{id}', [ProductController::class, 'update']);
 Route::delete('products/{id}', [ProductController::class, 'destroy']);
+
+
+// --- QUẢN LÝ SẢN PHẨM (ADMIN) ---
+// Thêm dòng này để cho phép POST (Thêm mới)
+Route::post('products/import', [ProductController::class, 'import']);
+Route::post('products', [ProductController::class, 'store']);
 
 // --- QUẢN LÝ KHO (INVENTORY) ---
 Route::get('product-stores', [ProductStoreController::class, 'index']);
