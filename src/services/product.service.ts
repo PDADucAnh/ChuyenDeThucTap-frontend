@@ -1,5 +1,7 @@
 import axiosInstance from "@/lib/axios";
 
+// --- INTERFACES ---
+
 export interface Attribute {
   id: number;
   name: string;
@@ -10,11 +12,19 @@ export interface ProductAttributeInput {
   value: string;
 }
 
-// Interface trả về từ Backend (khi gọi getProduct)
-export interface ProductAttributeResponse {
+// Fixed: Separate interface for Product Images to avoid 'any'
+export interface ProductImage {
+  id: number;
+  image: string;
+  product_id: number;
+}
+
+// Fixed: General interface for Product Attributes (DB structure)
+export interface ProductAttribute {
   id: number;
   attribute_id: number;
   value: string;
+  product_id: number;
   attribute?: {
     id: number;
     name: string;
@@ -32,12 +42,16 @@ export interface Product {
   original_price?: number;
   description: string;
   content?: string;
-  is_new: boolean;
-  is_sale: boolean;
+  is_new: boolean | number;
+  is_sale: boolean | number;
+  status?: number;
+  category_id?: number;
   category?: { id: number; name: string; slug: string };
-  // Update types for relations
-  images?: { id: number; image: string }[];
-  product_attributes?: ProductAttributeResponse[];
+
+  // Relations
+  images?: ProductImage[];
+  product_attributes?: ProductAttribute[];
+  attributes?: ProductAttribute[]; // Backend might return one or the other
 }
 
 export interface ProductQueryParams {
@@ -59,6 +73,8 @@ export interface Category {
   slug: string;
 }
 
+// --- RESPONSE INTERFACES ---
+
 interface CategoryListResponse {
   status: boolean;
   categories: Category[];
@@ -77,19 +93,19 @@ interface ProductListResponse {
 interface ProductDetailResponse {
   status: boolean;
   product: Product;
-  related_products: Product[];
+  related_products?: Product[];
 }
 
-// Define specific response for attribute list
 interface AttributeListResponse {
   status: boolean;
   attributes: Attribute[];
 }
 
+// --- SERVICE ---
+
 export const productService = {
-  // Get list of available attributes (Size, Color, Material...)
+  // Get available attributes (Size, Color...)
   getAttributes: async () => {
-    // Explicitly casting the return to the expected type to handle the interceptor's behavior
     return (await axiosInstance.get(
       "/attributes"
     )) as unknown as AttributeListResponse;
@@ -102,39 +118,48 @@ export const productService = {
     });
   },
 
-  // Hàm 1: Lấy danh sách sản phẩm
+  // 1. Get List
   getProducts: async (params?: ProductQueryParams) => {
     return (await axiosInstance.get("/products", {
       params,
     })) as unknown as ProductListResponse;
   },
 
-  // Hàm 2: Lấy chi tiết 1 sản phẩm
+  // 2. Get Detail by Slug (Frontend)
   getProductBySlug: async (slug: string) => {
     return (await axiosInstance.get(
       `/products/${slug}`
     )) as unknown as ProductDetailResponse;
   },
 
-  // Hàm 3: Lấy danh sách danh mục
+  // 3. Get Detail by ID (Admin Edit - ADDED THIS)
+  getProductById: async (id: number) => {
+    return (await axiosInstance.get(
+      `/products/${id}`
+    )) as unknown as ProductDetailResponse;
+  },
+
+  // 4. Get Categories
   getCategories: async () => {
     return (await axiosInstance.get(
       "/categories"
     )) as unknown as CategoryListResponse;
   },
 
-  // 5. Xóa sản phẩm
+  // 5. Delete Product
   deleteProduct: async (id: number) => {
     return await axiosInstance.delete(`/products/${id}`);
   },
 
-  // 6. Cập nhật sản phẩm
+  // 6. Update Product
   updateProduct: async (id: number, formData: FormData) => {
-    return await axiosInstance.post(`/products/${id}?_method=PUT`, formData, {
+    // Note: FormData updates usually require POST method in Laravel
+    return await axiosInstance.post(`/products/${id}`, formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
   },
-  // NEW: Import Excel
+
+  // 7. Import Excel
   importProducts: async (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
@@ -144,5 +169,9 @@ export const productService = {
         "Content-Type": "multipart/form-data",
       },
     });
+  },
+  // 8. Toggle Status
+  toggleStatus: async (id: number) => {
+    return await axiosInstance.patch(`/products/${id}/toggle-status`);
   },
 };

@@ -3,10 +3,19 @@
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Plus, Edit, Trash2, Search, Eye, Upload, Loader2 } from "lucide-react";
+import {
+  Plus,
+  Edit,
+  Trash2,
+  Search,
+  Eye, // Icon for Visible
+  EyeOff, // Icon for Hidden
+  Upload,
+  Loader2,
+  Download,
+} from "lucide-react";
 import { productService, Product } from "@/services/product.service";
 import { AxiosError } from "axios";
-// FIX 1 & 3: Removed unused 'toast' import to fix module not found and unused var error
 
 export default function AdminProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -14,19 +23,19 @@ export default function AdminProductsPage() {
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Hàm load dữ liệu
+  // Load Data
   const fetchProducts = async () => {
     try {
       const res = await productService.getProducts({ limit: 100 });
       if (res.status) {
         setProducts(res.products.data);
       }
-    } catch (error) {
-      const err = error as AxiosError<{ message: string }>;
-      console.error(
-        "Lỗi tải sản phẩm:",
-        err.response?.data?.message || err.message
-      );
+    } catch (error: unknown) {
+      let msg = "Unknown error";
+      if (error instanceof AxiosError)
+        msg = error.response?.data?.message || error.message;
+      else if (error instanceof Error) msg = error.message;
+      console.error("Lỗi tải sản phẩm:", msg);
     } finally {
       setLoading(false);
     }
@@ -36,24 +45,93 @@ export default function AdminProductsPage() {
     fetchProducts();
   }, []);
 
-  // Hàm Xóa sản phẩm
+  // --- NEW: Toggle Visibility Status ---
+  const handleToggleStatus = async (id: number) => {
+    try {
+      // Optimistic Update: Update UI immediately for better UX
+      setProducts((prev) =>
+        prev.map((p) =>
+          p.id === id ? { ...p, status: p.status === 1 ? 0 : 1 } : p
+        )
+      );
+
+      // Call API
+      await productService.toggleStatus(id);
+    } catch (error) {
+      alert("Lỗi cập nhật trạng thái");
+      fetchProducts(); // Revert on error
+    }
+  };
+
+  // Delete Product
   const handleDelete = async (id: number) => {
-    if (
-      confirm(
-        "Bạn có chắc chắn muốn xóa sản phẩm này không? Hành động này không thể hoàn tác."
-      )
-    ) {
+    if (confirm("Bạn có chắc chắn muốn xóa sản phẩm này không?")) {
       try {
         await productService.deleteProduct(id);
         alert("Đã xóa sản phẩm thành công!");
         fetchProducts();
-      } catch (error) {
-        const err = error as AxiosError<{ message: string }>;
-        alert("Lỗi khi xóa: " + (err.response?.data?.message || err.message));
+      } catch (error: unknown) {
+        let msg = "Unknown error";
+        if (error instanceof AxiosError)
+          msg = error.response?.data?.message || error.message;
+        else if (error instanceof Error) msg = error.message;
+        alert("Lỗi khi xóa: " + msg);
       }
     }
   };
 
+  // Generate Sample File
+  const handleDownloadTemplate = () => {
+    const headers = [
+      "Tên sản phẩm",
+      "Danh mục",
+      "Giá bán",
+      "Số lượng kho",
+      "Giá vốn",
+      "Mô tả ngắn",
+      "Nội dung chi tiết",
+      "Link Ảnh (Optional)",
+    ];
+
+    const rows = [
+      [
+        "Áo Thun Nam Basic",
+        "Áo Nam",
+        "150000",
+        "100",
+        "100000",
+        "Áo thun cotton thoáng mát",
+        "<p>Chi tiết sản phẩm...</p>",
+        "",
+      ],
+      [
+        "Quần Jean Nữ Cao Cấp",
+        "Quần Nữ",
+        "350000",
+        "50",
+        "250000",
+        "Quần jean co giãn tốt",
+        "<p>Chất liệu denim...</p>",
+        "",
+      ],
+    ];
+
+    const csvString =
+      headers.join(",") + "\n" + rows.map((e) => e.join(",")).join("\n");
+    const blob = new Blob(["\uFEFF" + csvString], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "mau_nhap_san_pham.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Import Handler
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -63,17 +141,14 @@ export default function AdminProductsPage() {
       await productService.importProducts(file);
       alert("Nhập dữ liệu thành công!");
       fetchProducts();
-    } catch (error) {
-      // FIX 2: Replaced 'any' with proper type checking
+    } catch (error: unknown) {
       console.error("Upload Error Details:", error);
       let errorMessage = "Lỗi khi nhập file";
-
       if (error instanceof AxiosError && error.response?.data?.message) {
         errorMessage = error.response.data.message;
       } else if (error instanceof Error) {
         errorMessage = error.message;
       }
-
       alert(errorMessage);
     } finally {
       setImporting(false);
@@ -83,11 +158,10 @@ export default function AdminProductsPage() {
 
   return (
     <div>
-      {/* Header: Title & Actions */}
+      {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Quản lý sản phẩm</h1>
         <div className="flex gap-3">
-          {/* Hidden File Input */}
           <input
             type="file"
             ref={fileInputRef}
@@ -95,8 +169,12 @@ export default function AdminProductsPage() {
             className="hidden"
             accept=".xlsx, .xls, .csv"
           />
-
-          {/* Import Button */}
+          <button
+            onClick={handleDownloadTemplate}
+            className="flex items-center gap-2 bg-gray-100 text-gray-700 px-4 py-2 rounded hover:bg-gray-200 transition border border-gray-300"
+          >
+            <Download size={20} /> Tải mẫu
+          </button>
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={importing}
@@ -109,18 +187,16 @@ export default function AdminProductsPage() {
             )}
             Nhập Excel
           </button>
-
-          {/* Create Button */}
           <Link
             href="/admin/products/create"
             className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
           >
-            <Plus size={20} />
-            Thêm mới
+            <Plus size={20} /> Thêm mới
           </Link>
         </div>
       </div>
-      {/* Filter & Search Bar */}
+
+      {/* Search */}
       <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 mb-6 flex gap-4">
         <div className="relative flex-1 max-w-md">
           <Search
@@ -131,15 +207,12 @@ export default function AdminProductsPage() {
             type="text"
             placeholder="Tìm kiếm sản phẩm..."
             className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            // FIX 4: Removed unused 'e' parameter
-            onChange={() => {
-              // Logic tìm kiếm client-side đơn giản hoặc gọi API tìm kiếm
-            }}
+            onChange={() => {}}
           />
         </div>
       </div>
 
-      {/* Product Table */}
+      {/* Table */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -168,6 +241,7 @@ export default function AdminProductsPage() {
               ) : (
                 products.map((product) => (
                   <tr key={product.id} className="hover:bg-gray-50 transition">
+                    {/* Image */}
                     <td className="px-6 py-4">
                       <div className="w-12 h-16 relative bg-gray-100 rounded overflow-hidden border">
                         <Image
@@ -185,6 +259,8 @@ export default function AdminProductsPage() {
                         />
                       </div>
                     </td>
+
+                    {/* Name & Slug */}
                     <td className="px-6 py-4">
                       <div
                         className="font-medium text-gray-900 line-clamp-1"
@@ -196,39 +272,57 @@ export default function AdminProductsPage() {
                         Slug: {product.slug}
                       </div>
                     </td>
+
+                    {/* Price */}
                     <td className="px-6 py-4 font-medium text-gray-900">
                       {new Intl.NumberFormat("vi-VN", {
                         style: "currency",
                         currency: "VND",
                       }).format(Number(product.price_buy))}
                     </td>
+
+                    {/* Status Column: Only show Sale Badge */}
                     <td className="px-6 py-4">
                       <div className="flex flex-col gap-1 items-start">
-                        <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-xs font-bold">
-                          Hiển thị
-                        </span>
-                        {product.is_new && (
-                          <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-[10px] font-bold">
-                            New
-                          </span>
-                        )}
-                        {product.is_sale && (
+                        {/* Only display Sale if is_sale is true */}
+                        {product.is_sale ? (
                           <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded-full text-[10px] font-bold">
                             Sale
                           </span>
-                        )}
+                        ) : null}
+
+                        {/* Optional: Show New badge if you want, else remove */}
+                        {product.is_new ? (
+                          <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                            New
+                          </span>
+                        ) : null}
                       </div>
                     </td>
+
+                    {/* Actions: Eye Toggle */}
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <Link
-                          href={`/products/${product.slug}`}
-                          target="_blank"
-                          className="p-2 text-gray-500 hover:bg-gray-100 rounded"
-                          title="Xem trên web"
+                        {/* TOGGLE VISIBILITY BUTTON */}
+                        <button
+                          onClick={() => handleToggleStatus(product.id)}
+                          className={`p-2 rounded transition ${
+                            product.status === 1
+                              ? "text-blue-600 hover:bg-blue-50" // Visible style
+                              : "text-gray-400 hover:bg-gray-100" // Hidden style
+                          }`}
+                          title={
+                            product.status === 1
+                              ? "Đang hiện (Nhấn để ẩn)"
+                              : "Đang ẩn (Nhấn để hiện)"
+                          }
                         >
-                          <Eye size={18} />
-                        </Link>
+                          {product.status === 1 ? (
+                            <Eye size={20} />
+                          ) : (
+                            <EyeOff size={20} /> // Eye with line
+                          )}
+                        </button>
 
                         <Link
                           href={`/admin/products/edit/${product.id}`}
